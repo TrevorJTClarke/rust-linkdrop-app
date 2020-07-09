@@ -17,7 +17,6 @@ pub struct LinkDrop {
 
 /// Access key allowance for linkdrop contract (unlimited)
 const ACCESS_KEY_ALLOWANCE: u128 = 1_000_000_000_000_000_000_000;
-const MAX_ALLOWANCE: u128 = u128::MAX;
 
 /// Gas attached to the callback from account creation.
 pub const ON_CREATE_ACCOUNT_CALLBACK_GAS: u64 = 40_000_000_000_000;
@@ -152,68 +151,6 @@ impl LinkDrop {
             ))
     }
 
-    /********************************
-    Creates a multisig 
-    ********************************/
-    pub fn create_multisig_and_claim(
-        &mut self,
-        new_account_id: AccountId,
-        new_access_keys: Vec<Base58PublicKey>,
-        new_confirm_keys: Vec<Base58PublicKey>,
-        num_confirmations: u32,
-    ) -> Promise {
-        assert_eq!(
-            env::predecessor_account_id(),
-            env::current_account_id(),
-            "Create account and claim only can come from this account"
-        );
-        assert!(
-            env::is_valid_account_id(new_account_id.as_bytes()),
-            "Invalid account id"
-        );
-        let multisig_bytes = include_bytes!("../res/multisig.wasm").to_vec();
-        let amount = self
-            .accounts
-            .remove(&env::signer_account_pk())
-            .expect("Unexpected public key");
-        // create the account, multisig contract, call new
-        let mut promise = Promise::new(new_account_id.clone()).create_account()
-            .transfer(amount)
-            .deploy_contract(multisig_bytes)
-            .function_call(
-                b"new".to_vec(),
-                serde_json::to_vec(&MultisigArgs { num_confirmations }).unwrap(),
-                NO_DEPOSIT,
-                ON_CREATE_ACCOUNT_CALLBACK_GAS,
-            );
-        // add the access keys
-        for key in new_access_keys {
-            promise = promise.add_access_key(
-                key.into(),
-                MAX_ALLOWANCE.into(),
-                new_account_id.clone(),
-                b"add_request,delete_request,confirm".to_vec()
-            );
-        }
-        // add the confirmation keys
-        for key in new_confirm_keys {
-            promise = promise.add_access_key(
-                key.into(),
-                MAX_ALLOWANCE.into(),
-                new_account_id.clone(),
-                b"confirm".to_vec()
-            );
-        }
-        // return the promise
-        promise.then(
-            ext_self::on_account_created_and_claimed(
-            amount.into(),
-            &env::current_account_id(),
-            NO_DEPOSIT,
-            ON_CREATE_ACCOUNT_CALLBACK_GAS,
-        ))
-    }
-
     /// Create and fund new account with limited access key to contract methods.
     pub fn create_contract_and_claim(
         &mut self,
@@ -324,6 +261,8 @@ mod tests {
 
     use super::*;
 
+    const MAX_ALLOWANCE: u128 = u128::MAX;
+    
     pub struct VMContextBuilder {
         context: VMContext,
     }
@@ -409,35 +348,6 @@ mod tests {
     }
 
     #[test]
-    fn test_send_limited_and_create_multisig() {
-        let mut contract = LinkDrop::default();
-        let pk: Base58PublicKey = "qSq3LoufLvTCTNGC3LJePMDGrok8dHMQ5A1YD9psbiz".try_into().unwrap();
-        // Deposit money to linkdrop contract.
-        let deposit = ACCESS_KEY_ALLOWANCE * 100;
-        testing_env!(VMContextBuilder::new()
-            .current_account_id(linkdrop())
-            .attached_deposit(deposit)
-            .finish());
-        contract.send_limited(pk.clone(), "create_multisig_and_claim".to_string());
-        // Now, send new transaction to link drop contract.
-        let context = VMContextBuilder::new()
-            .current_account_id(linkdrop())
-            .predecessor_account_id(linkdrop())
-            .signer_account_pk(pk.into())
-            .account_balance(deposit)
-            .finish();
-        testing_env!(context);
-        let pk2 = "2S87aQ1PM9o6eBcEXnTR5yBAVRTiNmvj8J8ngZ6FzSca"
-            .try_into()
-            .unwrap();
-        let pk3 = "2S87aQ1PM9o6eBcEXnTR5yBAVRTiNmvj8J8ngZ6FzSca"
-            .try_into()
-            .unwrap();
-        // create multisig with 2 confirmations
-        contract.create_multisig_and_claim(bob(), vec![pk2], vec![pk3], 2);
-    }
-
-    #[test]
     fn test_create_contract() {
         let mut contract = LinkDrop::default();
         let pk: Base58PublicKey = "qSq3LoufLvTCTNGC3LJePMDGrok8dHMQ5A1YD9psbiz"
@@ -461,6 +371,7 @@ mod tests {
         let pk2 = "2S87aQ1PM9o6eBcEXnTR5yBAVRTiNmvj8J8ngZ6FzSca"
             .try_into()
             .unwrap();
+
         let allowance:U128 = MAX_ALLOWANCE.into();
         let contract_bytes = include_bytes!("../res/multisig.wasm").to_vec();
         let method_names = "multisig_method_a,multisig_method_b".as_bytes().to_vec();
