@@ -342,7 +342,7 @@ const Drops = (props) => {
                 <p>Balance: <span className="funds">{nearTo(currentUser.balance, 2)} Ⓝ</span></p>
             </div>
             <button onClick={() => fundDrop()}>Create Generic Drop</button><br/>
-            <button onClick={() => fundLimitedDrop()}>Create Multisig Drop</button>
+            {/* <button onClick={() => fundLimitedDrop()}>Create Multisig Drop</button> */}
             {
                 urlDrop && <div className="drop">
                     <h2>URL Drop</h2>
